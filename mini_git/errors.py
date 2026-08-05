@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import sys
 from typing import TextIO
 
 
@@ -71,6 +72,13 @@ class RuntimeError(Exception):
         """위상 정렬 중 커밋 그래프의 순환을 발견했을 때 사용한다."""
         return cls("commit graph has a cycle")
 
+    @classmethod
+    def unexpected_exception(cls, error: BaseException) -> RuntimeError:
+        """미리 분류하지 못한 예외가 발생했을 때 사용한다."""
+        error_name = type(error).__name__
+        message = str(error) or error_name
+        return cls(f"unexpected {error_name}: {message}")
+
     def format_message(self) -> str:
         return f"runtime error: {self.message}"
 
@@ -87,6 +95,11 @@ class EnvError(Exception):
         """사용자가 Ctrl-C로 REPL을 중단했을 때 사용한다."""
         return cls("interrupted by user")
 
+    @classmethod
+    def io_failed(cls, error: OSError) -> EnvError:
+        """입력 또는 출력 스트림에서 I/O 에러가 발생했을 때 사용한다."""
+        return cls(f"io failed: {error}")
+
     def format_message(self) -> str:
         return f"env error: {self.message}"
 
@@ -95,10 +108,31 @@ HandledError = AppError | RuntimeError | EnvError
 
 
 class HandlerError:
-    """처리 가능한 모든 에러의 단일 출력 경계다."""
+    """모든 예외를 분류하고 출력하는 단일 에러 처리 진입점이다."""
 
-    def __call__(self, error: HandledError, output_stream: TextIO) -> None:
-        print(error.format_message(), file=output_stream)
+    def __call__(self, error: BaseException, output_stream: TextIO) -> None:
+        handled_error = self._to_handled_error(error)
+        self._write(handled_error.format_message(), output_stream)
+
+    def _to_handled_error(self, error: BaseException) -> HandledError:
+        """raw 예외를 AppError, RuntimeError, EnvError 중 하나로 변환한다."""
+        if isinstance(error, (AppError, RuntimeError, EnvError)):
+            return error
+        if isinstance(error, KeyboardInterrupt):
+            return EnvError.keyboard_interrupt()
+        if isinstance(error, OSError):
+            return EnvError.io_failed(error)
+        return RuntimeError.unexpected_exception(error)
+
+    def _write(self, message: str, output_stream: TextIO) -> None:
+        """기본 출력이 실패하면 stderr로 한 번 더 출력한다."""
+        try:
+            print(message, file=output_stream)
+        except BaseException:
+            try:
+                print(message, file=sys.stderr)
+            except BaseException:
+                pass
 
 
 handler_error = HandlerError()
