@@ -28,52 +28,67 @@ class AppError(Exception):
         return cls(f"usage: {command_usage}", exit_code=2)
 
     @classmethod
-    def working_tree_path_not_found(cls, target: str) -> AppError:
-        """작업 트리에 없는 경로를 참조했을 때 사용한다."""
-        return cls(f"not found: {target}")
+    def repository_not_initialized(cls) -> AppError:
+        """INIT 전 저장소 기능을 실행했을 때 사용한다."""
+        return cls("repository is not initialized")
 
     @classmethod
-    def object_hash_not_found(cls, object_hash: str) -> AppError:
-        """존재하지 않는 객체 해시나 prefix를 참조했을 때 사용한다."""
-        return cls(f"not found: {object_hash}")
+    def branch_already_exists(cls, branch_name: str) -> AppError:
+        """이미 존재하는 브랜치를 만들려고 할 때 사용한다."""
+        return cls(f"branch already exists: {branch_name}")
 
     @classmethod
-    def empty_working_tree_commit(cls) -> AppError:
-        """작업 트리가 비어 있는데 커밋하려고 할 때 사용한다."""
-        return cls("nothing to commit")
+    def branch_requires_commit(cls) -> AppError:
+        """첫 커밋 전에 브랜치를 만들려고 할 때 사용한다."""
+        return cls("cannot create branch before first commit")
+
+    @classmethod
+    def unknown_branch(cls, branch_name: str) -> AppError:
+        """존재하지 않는 브랜치를 참조했을 때 사용한다."""
+        return cls(f"unknown branch: {branch_name}")
+
+    @classmethod
+    def unknown_commit(cls, commit_hash: str) -> AppError:
+        """존재하지 않는 커밋 해시를 참조했을 때 사용한다."""
+        return cls(f"unknown commit: {commit_hash}")
+
+    @classmethod
+    def invalid_sort_option(cls, sort_by: str) -> AppError:
+        """지원하지 않는 로그 정렬 옵션을 입력했을 때 사용한다."""
+        return cls(f"invalid sort option: {sort_by}", exit_code=2)
 
     def format_message(self) -> str:
+        """AppError 출력 메시지를 만든다."""
         return f"app error: {self.message}"
+
+    def handle(self, output_stream: TextIO) -> int:
+        """앱 규칙 에러 메시지를 출력하고 종료 코드를 반환한다."""
+        _write_message(self.format_message(), output_stream)
+        return self.exit_code
 
 
 class RuntimeError(Exception):
-    """저장소나 객체 저장소의 내부 상태에서 발생하는 에러다."""
+    """저장소 내부 상태나 알고리즘 실행 중 발생하는 에러다."""
 
-    exit_code = 1
-
-    def __init__(self, message: str) -> None:
+    def __init__(self, message: str, exit_code: int = 1) -> None:
         super().__init__(message)
         self.message = message
+        self.exit_code = exit_code
 
     @classmethod
-    def ambiguous_object_hash(cls, object_hash: str) -> RuntimeError:
-        """해시 prefix가 둘 이상의 저장 객체와 일치할 때 사용한다."""
-        return cls(f"ambiguous object hash: {object_hash}")
-
-    @classmethod
-    def duplicate_object_hash(cls, object_hash: str) -> RuntimeError:
-        """생성된 해시가 이미 객체 저장소에 있을 때 사용한다."""
-        return cls(f"duplicated object hash: {object_hash}")
-
-    @classmethod
-    def stored_object_not_found(cls, object_hash: str) -> RuntimeError:
-        """내부 조회에서 없는 저장 객체를 불러오려고 할 때 사용한다."""
-        return cls(f"object not found: {object_hash}")
+    def ambiguous_commit_hash(cls, commit_hash: str) -> RuntimeError:
+        """커밋 해시 prefix가 둘 이상의 커밋과 일치할 때 사용한다."""
+        return cls(f"ambiguous commit hash: {commit_hash}")
 
     @classmethod
     def cyclic_commit_graph(cls) -> RuntimeError:
         """위상 정렬 중 커밋 그래프의 순환을 발견했을 때 사용한다."""
         return cls("commit graph has a cycle")
+
+    @classmethod
+    def shortest_path_reconstruction_failed(cls) -> RuntimeError:
+        """계산된 거리 정보로 최단 경로를 복원할 수 없을 때 사용한다."""
+        return cls("failed to reconstruct shortest path")
 
     @classmethod
     def unexpected_exception(cls, error: BaseException) -> RuntimeError:
@@ -83,7 +98,41 @@ class RuntimeError(Exception):
         return cls(f"unexpected {error_name}: {message}")
 
     def format_message(self) -> str:
+        """RuntimeError 출력 메시지를 만든다."""
         return f"runtime error: {self.message}"
+
+    def handle(self, output_stream: TextIO) -> int:
+        """런타임 에러 메시지를 출력하고 종료 코드를 반환한다."""
+        _write_message(self.format_message(), output_stream)
+        return self.exit_code
+
+
+class ReplExit(Exception):
+    """REPL 입력 흐름이 종료될 때 발생하는 제어 흐름이다."""
+
+    def __init__(self, message: str, exit_code: int) -> None:
+        super().__init__(message)
+        self.message = message
+        self.exit_code = exit_code
+
+    @classmethod
+    def keyboard_interrupt(cls) -> ReplExit:
+        """사용자가 Ctrl-C로 REPL 실행을 중단했을 때 사용한다."""
+        return cls("interrupted by user", exit_code=130)
+
+    @classmethod
+    def eof(cls) -> ReplExit:
+        """입력 스트림이 EOF에 도달했을 때 사용한다."""
+        return cls("unexpected end of input", exit_code=1)
+
+    def format_message(self) -> str:
+        """ReplExit 출력 메시지를 만든다."""
+        return f"repl exit: {self.message}"
+
+    def handle(self, output_stream: TextIO) -> int:
+        """REPL 종료 메시지를 출력하고 종료 코드를 반환한다."""
+        _write_message(self.format_message(), output_stream)
+        return self.exit_code
 
 
 class EnvError(Exception):
@@ -95,56 +144,26 @@ class EnvError(Exception):
         self.exit_code = exit_code
 
     @classmethod
-    def keyboard_interrupt(cls) -> EnvError:
-        """사용자가 Ctrl-C로 REPL을 중단했을 때 사용한다."""
-        return cls("interrupted by user", exit_code=130)
-
-    @classmethod
-    def eof_error(cls) -> EnvError:
-        """입력 스트림에서 EOFError가 발생했을 때 사용한다."""
-        return cls("unexpected end of input", exit_code=1)
-
-    @classmethod
     def io_failed(cls, error: OSError) -> EnvError:
         """입력 또는 출력 스트림에서 I/O 에러가 발생했을 때 사용한다."""
         return cls(f"io failed: {error}")
 
     def format_message(self) -> str:
+        """EnvError 출력 메시지를 만든다."""
         return f"env error: {self.message}"
 
+    def handle(self, output_stream: TextIO) -> int:
+        """환경 에러 메시지를 출력하고 종료 코드를 반환한다."""
+        _write_message(self.format_message(), output_stream)
+        return self.exit_code
 
-HandledError = AppError | RuntimeError | EnvError
 
-
-class HandlerError:
-    """모든 예외를 분류하고 출력하는 단일 에러 처리 진입점이다."""
-
-    def __call__(self, error: BaseException, output_stream: TextIO) -> int:
-        handled_error = self._to_handled_error(error)
-        self._write(handled_error.format_message(), output_stream)
-        return handled_error.exit_code
-
-    def _to_handled_error(self, error: BaseException) -> HandledError:
-        """raw 예외를 AppError, RuntimeError, EnvError 중 하나로 변환한다."""
-        if isinstance(error, (AppError, RuntimeError, EnvError)):
-            return error
-        if isinstance(error, KeyboardInterrupt):
-            return EnvError.keyboard_interrupt()
-        if isinstance(error, EOFError):
-            return EnvError.eof_error()
-        if isinstance(error, OSError):
-            return EnvError.io_failed(error)
-        return RuntimeError.unexpected_exception(error)
-
-    def _write(self, message: str, output_stream: TextIO) -> None:
-        """기본 출력이 실패하면 stderr로 한 번 더 출력한다."""
+def _write_message(message: str, output_stream: TextIO) -> None:
+    """기본 출력이 실패하면 stderr로 한 번 더 출력한다."""
+    try:
+        print(message, file=output_stream)
+    except BaseException:
         try:
-            print(message, file=output_stream)
+            print(message, file=sys.stderr)
         except BaseException:
-            try:
-                print(message, file=sys.stderr)
-            except BaseException:
-                pass
-
-
-handler_error = HandlerError()
+            pass

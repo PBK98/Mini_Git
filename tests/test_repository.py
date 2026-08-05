@@ -1,66 +1,264 @@
 import unittest
 from io import StringIO
+from unittest.mock import patch
 
-from mini_git import Blob, Directory, MiniGit, MiniGitRepository
+from mini_git import CommitObject, MiniGit, MiniGitRepository
 from mini_git.errors import (
     AppError,
     EnvError,
+    ReplExit,
     RuntimeError,
-    handler_error,
 )
 from mini_git.repl import MiniGitRepl
 
 
+def make_commit(
+    commit_hash: str,
+    parents: tuple[str, ...] = (),
+    author: str = "Alice",
+    timestamp: str = "2026-01-01 00:00:00",
+) -> CommitObject:
+    """그래프 알고리즘 테스트에 사용할 커밋 객체를 만든다."""
+    return CommitObject(
+        commit_hash=commit_hash,
+        message=commit_hash,
+        author=author,
+        timestamp=timestamp,
+        parents=parents,
+        branch="main",
+    )
+
+
 class MiniGitRepositoryTest(unittest.TestCase):
-    def test_blob_hash_is_content_based(self):
-        repo = MiniGitRepository()
-
-        first_hash = repo.object_store.save_content_object(Blob("hello"))
-        second_hash = repo.object_store.save_content_object(Blob("hello"))
-
-        self.assertEqual(first_hash, second_hash)
-
-    def test_directory_maps_file_name_to_blob_hash(self):
-        repo = MiniGitRepository()
-        blob_hash = repo.object_store.save_content_object(Blob("hello"))
-        directory = Directory({"hello.txt": blob_hash})
-
-        directory_hash = repo.object_store.save_content_object(directory)
-        saved_directory = repo.object_store.get(directory_hash)
-
-        self.assertEqual(saved_directory, directory)
-
     def test_commit_hashes_are_unique_in_session(self):
         repo = MiniGitRepository()
+        repo.init("Alice")
 
-        first_hash = repo.commit({"a.txt": "same"}, "same message")
-        second_hash = repo.commit({"a.txt": "same"}, "same message")
+        first_hash = repo.commit("same message").commit_hash
+        second_hash = repo.commit("same message").commit_hash
+
+        self.assertNotEqual(first_hash, second_hash)
+
+    @patch("mini_git.repository.datetime")
+    def test_commit_hashes_remain_unique_after_reinitialization(self, datetime_mock):
+        datetime_mock.now.return_value.strftime.return_value = "2026-01-01 00:00:00"
+        repo = MiniGitRepository()
+        repo.init("Alice")
+        first_hash = repo.commit("same message").commit_hash
+
+        repo.init("Alice")
+        second_hash = repo.commit("same message").commit_hash
 
         self.assertNotEqual(first_hash, second_hash)
 
     def test_topological_sort_returns_parent_before_child(self):
         repo = MiniGitRepository()
+        repo.init("Alice")
 
-        first_hash = repo.commit({"a.txt": "1"}, "first")
-        second_hash = repo.commit({"a.txt": "2"}, "second")
+        first_hash = repo.commit("first").commit_hash
+        second_hash = repo.commit("second").commit_hash
 
         sorted_hashes = [commit.commit_hash for commit in repo.sorted_commits()]
 
         self.assertLess(sorted_hashes.index(first_hash), sorted_hashes.index(second_hash))
 
+    def test_shortest_path_does_not_choose_a_longer_lexicographical_path(self):
+        repo = MiniGitRepository()
+        repo.init("Alice")
+        repo.commits = {
+            "s": make_commit("s"),
+            "a": make_commit("a", ("s",)),
+            "z": make_commit("z", ("s", "a")),
+        }
+        repo.children["s"] = ["z", "a"]
+        repo.children["a"] = ["z"]
+
+        path = repo.shortest_path("s", "z")
+
+        self.assertEqual(path, ["s", "z"])
+
+    def test_shortest_path_chooses_lexicographically_smallest_equal_path(self):
+        repo = MiniGitRepository()
+        repo.init("Alice")
+        repo.commits = {
+            "s": make_commit("s"),
+            "b": make_commit("b", ("s",)),
+            "c": make_commit("c", ("s",)),
+            "z": make_commit("z", ("b", "c")),
+        }
+        repo.children["s"] = ["c", "b"]
+        repo.children["b"] = ["z"]
+        repo.children["c"] = ["z"]
+
+        path = repo.shortest_path("s", "z")
+
+        self.assertEqual(path, ["s", "b", "z"])
+
+    def test_shortest_path_returns_none_for_disconnected_commits(self):
+        repo = MiniGitRepository()
+        repo.init("Alice")
+        repo.commits = {
+            "left": make_commit("left"),
+            "right": make_commit("right"),
+        }
+
+        self.assertIsNone(repo.shortest_path("left", "right"))
+
+    def test_ancestors_returns_every_reachable_parent_once(self):
+        repo = MiniGitRepository()
+        repo.init("Alice")
+        repo.commits = {
+            "root": make_commit("root"),
+            "left": make_commit("left", ("root",)),
+            "right": make_commit("right", ("root",)),
+            "merge": make_commit("merge", ("left", "right")),
+        }
+
+        ancestors = repo.ancestors("merge")
+
+        self.assertEqual(
+            {commit.commit_hash for commit in ancestors},
+            {"root", "left", "right"},
+        )
+
+    def test_log_sort_options_use_the_requested_fields(self):
+        repo = MiniGitRepository()
+        repo.init("Alice")
+        first = make_commit("first", author="Charlie", timestamp="2026-01-02 00:00:00")
+        second = make_commit("second", author="Alice", timestamp="2026-01-03 00:00:00")
+        third = make_commit("third", author="Bob", timestamp="2026-01-01 00:00:00")
+        repo.commits = {
+            first.commit_hash: first,
+            second.commit_hash: second,
+            third.commit_hash: third,
+        }
+
+        by_date = [commit.commit_hash for commit in repo.log("date")]
+        by_author = [commit.commit_hash for commit in repo.log("author")]
+
+        self.assertEqual(by_date, ["third", "first", "second"])
+        self.assertEqual(by_author, ["second", "third", "first"])
+
+    def test_commit_parents_are_immutable(self):
+        repo = MiniGitRepository()
+        repo.init("Alice")
+
+        commit = repo.commit("first")
+
+        self.assertIsInstance(commit.parents, tuple)
+
 
 class MiniGitCommandTest(unittest.TestCase):
-    def test_minigit_executes_add_commit_and_log(self):
+    def test_minigit_executes_init_commit_branch_switch_and_log(self):
         app = MiniGit()
 
-        add_result = app.execute("add README.md hello")
+        init_result = app.execute("init Alice")
         commit_result = app.execute("commit first")
+        branch_result = app.execute("branch feature")
+        switch_result = app.execute("switch feature")
         log_result = app.execute("log")
 
-        self.assertEqual(add_result.lines, ["added README.md"])
+        self.assertIn("Initialized repository.", init_result.lines)
         self.assertEqual(len(commit_result.lines), 1)
-        self.assertIn("committed ", commit_result.lines[0])
-        self.assertIn("parent=None", log_result.lines[0])
+        self.assertIn("[main ", commit_result.lines[0])
+        self.assertEqual(branch_result.lines, ["Created branch: feature"])
+        self.assertEqual(switch_result.lines, ["Switched to branch: feature"])
+        self.assertIn("commit ", log_result.lines[0])
+        self.assertIn("[main]", log_result.lines[0])
+
+    def test_minigit_searches_by_keyword_and_author(self):
+        app = MiniGit()
+
+        app.execute("init Alice")
+        app.execute('commit "Initial commit"')
+        app.execute('commit "Add login feature"')
+
+        keyword_result = app.execute("search login")
+        author_result = app.execute("search --author=Alice")
+
+        self.assertIn("Found 1 commit:", keyword_result.lines[0])
+        self.assertIn("Add login feature", keyword_result.lines[1])
+        self.assertIn("Found 2 commits:", author_result.lines[0])
+
+    def test_minigit_searches_a_quoted_multiword_keyword(self):
+        app = MiniGit()
+        app.execute("init Alice")
+        app.execute('commit "Add login feature"')
+        app.execute('commit "Move login button"')
+
+        result = app.execute('search "login feature"')
+
+        self.assertEqual(result.lines[0], "Found 1 commit:")
+        self.assertIn("Add login feature", result.lines[1])
+
+    def test_minigit_supports_case_insensitive_commands_and_spaced_author(self):
+        app = MiniGit()
+
+        app.execute('INIT "Alice Smith"')
+        app.execute('CoMmIt "Initial commit"')
+        result = app.execute('SeArCh --author="Alice Smith"')
+
+        self.assertEqual(result.lines[0], "Found 1 commit:")
+
+    def test_repository_commands_require_init(self):
+        app = MiniGit()
+
+        for command in ("log", "search login", "path abc def", "ancestors abc"):
+            with self.subTest(command=command):
+                with self.assertRaises(AppError) as context:
+                    app.execute(command)
+                self.assertEqual(
+                    context.exception.message,
+                    "repository is not initialized",
+                )
+
+    def test_empty_string_arguments_are_rejected(self):
+        app = MiniGit()
+        commands = (
+            'init ""',
+            'branch ""',
+            'switch ""',
+            'commit ""',
+            'path "" abc',
+            'ancestors ""',
+            'search ""',
+            'search --author=""',
+            "help extra",
+            "exit extra",
+        )
+
+        for command in commands:
+            with self.subTest(command=command):
+                with self.assertRaises(AppError):
+                    app.execute(command)
+
+    def test_branch_requires_an_existing_head_commit(self):
+        app = MiniGit()
+        app.execute("init Alice")
+
+        with self.assertRaises(AppError) as context:
+            app.execute("branch feature")
+
+        self.assertEqual(
+            context.exception.message,
+            "cannot create branch before first commit",
+        )
+
+    def test_minigit_finds_path_and_ancestors(self):
+        app = MiniGit()
+
+        app.execute("init Alice")
+        first = app.repo.commit("first")
+        second = app.repo.commit("second")
+
+        path_result = app.execute(f"path {first.commit_hash[:6]} {second.commit_hash[:6]}")
+        ancestors_result = app.execute(f"ancestors {second.commit_hash[:6]}")
+
+        self.assertIn("Path:", path_result.lines[0])
+        self.assertIn(first.commit_hash[:6], path_result.lines[0])
+        self.assertIn(second.commit_hash[:6], path_result.lines[0])
+        self.assertIn("Ancestors:", ancestors_result.lines[0])
+        self.assertIn(first.message, ancestors_result.lines[1])
 
     def test_minigit_exit_result_marks_repl_exit(self):
         app = MiniGit()
@@ -72,11 +270,11 @@ class MiniGitCommandTest(unittest.TestCase):
 
 
 class MiniGitReplTest(unittest.TestCase):
-    def test_repl_add_commit_and_log(self):
+    def test_repl_init_commit_and_log(self):
         input_stream = StringIO(
             "\n".join(
                 [
-                    "add README.md hello",
+                    "init Alice",
                     "commit first",
                     "log",
                     "exit",
@@ -89,22 +287,22 @@ class MiniGitReplTest(unittest.TestCase):
 
         output = output_stream.getvalue()
 
-        self.assertIn("added README.md", output)
-        self.assertIn("committed ", output)
-        self.assertIn("parent=None", output)
+        self.assertIn("Initialized repository.", output)
+        self.assertIn("[main ", output)
+        self.assertIn("commit ", output)
         self.assertIn("first", output)
         self.assertIn("bye", output)
         self.assertEqual(exit_code, 0)
 
-    def test_repl_treats_empty_readline_as_eof_error(self):
+    def test_repl_routes_empty_readline_to_repl_exit(self):
         output_stream = StringIO()
 
         exit_code = MiniGitRepl(StringIO(), output_stream).run()
 
-        self.assertIn("env error: unexpected end of input", output_stream.getvalue())
+        self.assertIn("repl exit: unexpected end of input", output_stream.getvalue())
         self.assertEqual(exit_code, 1)
 
-    def test_repl_routes_errors_to_handler_error(self):
+    def test_repl_handles_app_error(self):
         input_stream = StringIO("commit\nexit\n")
         output_stream = StringIO()
 
@@ -116,7 +314,7 @@ class MiniGitReplTest(unittest.TestCase):
         self.assertIn("bye", output)
         self.assertEqual(exit_code, 2)
 
-    def test_repl_routes_keyboard_interrupt_to_handler_error(self):
+    def test_repl_routes_keyboard_interrupt_to_repl_exit(self):
         class InterruptInput:
             def readline(self):
                 raise KeyboardInterrupt
@@ -125,10 +323,10 @@ class MiniGitReplTest(unittest.TestCase):
 
         exit_code = MiniGitRepl(InterruptInput(), output_stream).run()
 
-        self.assertIn("env error: interrupted by user", output_stream.getvalue())
+        self.assertIn("repl exit: interrupted by user", output_stream.getvalue())
         self.assertEqual(exit_code, 130)
 
-    def test_repl_returns_1_for_eof_error(self):
+    def test_repl_routes_eof_error_to_repl_exit(self):
         class EofInput:
             def readline(self):
                 raise EOFError
@@ -137,10 +335,10 @@ class MiniGitReplTest(unittest.TestCase):
 
         exit_code = MiniGitRepl(EofInput(), output_stream).run()
 
-        self.assertIn("env error: unexpected end of input", output_stream.getvalue())
+        self.assertIn("repl exit: unexpected end of input", output_stream.getvalue())
         self.assertEqual(exit_code, 1)
 
-    def test_repl_routes_unexpected_error_to_handler_error(self):
+    def test_repl_handles_unexpected_error(self):
         repl = MiniGitRepl(StringIO(), StringIO())
 
         repl.app.execute = lambda line: (_ for _ in ()).throw(ValueError("boom"))
@@ -153,49 +351,51 @@ class MiniGitReplTest(unittest.TestCase):
         )
         self.assertEqual(exit_code, 1)
 
-    def test_repl_routes_ambiguous_hash_to_handler_error(self):
-        repl = MiniGitRepl(StringIO("show abc\nexit\n"), StringIO())
-        repl.app.repo.object_store._objects["abc111"] = Blob("one")
-        repl.app.repo.object_store._objects["abc222"] = Blob("two")
+    def test_repl_handles_ambiguous_hash_error(self):
+        repl = MiniGitRepl(StringIO("path abc abc111\nexit\n"), StringIO())
+        repl.app.repo.init("Alice")
+        repl.app.repo.commits["abc111"] = repl.app.repo.commit("one")
+        repl.app.repo.commits["abc222"] = repl.app.repo.commit("two")
 
         exit_code = repl.run()
 
         self.assertIn(
-            "runtime error: ambiguous object hash: abc",
+            "runtime error: ambiguous commit hash: abc",
             repl.output_stream.getvalue(),
         )
         self.assertEqual(exit_code, 1)
 
 
-class ErrorHandlerTest(unittest.TestCase):
-    def test_handler_error_delegates_app_error_message(self):
+class ErrorClassTest(unittest.TestCase):
+    def test_app_error_handles_its_message(self):
         output_stream = StringIO()
 
-        exit_code = handler_error(AppError("sample"), output_stream)
+        exit_code = AppError("sample").handle(output_stream)
 
         self.assertEqual(output_stream.getvalue(), "app error: sample\n")
         self.assertEqual(exit_code, 1)
 
-    def test_handler_error_delegates_runtime_error_message(self):
+    def test_runtime_error_handles_its_message(self):
         output_stream = StringIO()
 
-        exit_code = handler_error(RuntimeError("sample"), output_stream)
+        exit_code = RuntimeError("sample").handle(output_stream)
 
         self.assertEqual(output_stream.getvalue(), "runtime error: sample\n")
         self.assertEqual(exit_code, 1)
 
-    def test_handler_error_delegates_env_error_message(self):
+    def test_env_error_handles_its_message(self):
         output_stream = StringIO()
 
-        exit_code = handler_error(EnvError("sample"), output_stream)
+        exit_code = EnvError("sample").handle(output_stream)
 
         self.assertEqual(output_stream.getvalue(), "env error: sample\n")
         self.assertEqual(exit_code, 1)
 
-    def test_handler_error_converts_unknown_exception_to_runtime_error(self):
+    def test_runtime_error_handles_converted_unexpected_error(self):
         output_stream = StringIO()
 
-        exit_code = handler_error(ValueError("bad value"), output_stream)
+        error = RuntimeError.unexpected_exception(ValueError("bad value"))
+        exit_code = error.handle(output_stream)
 
         self.assertEqual(
             output_stream.getvalue(),
@@ -203,20 +403,29 @@ class ErrorHandlerTest(unittest.TestCase):
         )
         self.assertEqual(exit_code, 1)
 
-    def test_handler_error_converts_os_error_to_env_error(self):
+    def test_env_error_handles_converted_os_error(self):
         output_stream = StringIO()
 
-        exit_code = handler_error(OSError("stream failed"), output_stream)
+        error = EnvError.io_failed(OSError("stream failed"))
+        exit_code = error.handle(output_stream)
 
         self.assertEqual(output_stream.getvalue(), "env error: io failed: stream failed\n")
         self.assertEqual(exit_code, 1)
 
-    def test_handler_error_returns_1_for_eof_error(self):
+    def test_repl_exit_handles_keyboard_interrupt(self):
         output_stream = StringIO()
 
-        exit_code = handler_error(EOFError(), output_stream)
+        exit_code = ReplExit.keyboard_interrupt().handle(output_stream)
 
-        self.assertEqual(output_stream.getvalue(), "env error: unexpected end of input\n")
+        self.assertEqual(output_stream.getvalue(), "repl exit: interrupted by user\n")
+        self.assertEqual(exit_code, 130)
+
+    def test_repl_exit_handles_eof(self):
+        output_stream = StringIO()
+
+        exit_code = ReplExit.eof().handle(output_stream)
+
+        self.assertEqual(output_stream.getvalue(), "repl exit: unexpected end of input\n")
         self.assertEqual(exit_code, 1)
 
     def test_error_classes_create_common_messages_with_methods(self):
@@ -228,10 +437,15 @@ class ErrorHandlerTest(unittest.TestCase):
             RuntimeError.cyclic_commit_graph().format_message(),
             "runtime error: commit graph has a cycle",
         )
-        keyboard_error = EnvError.keyboard_interrupt()
+        repl_exit = ReplExit.keyboard_interrupt()
 
-        self.assertEqual(keyboard_error.format_message(), "env error: interrupted by user")
-        self.assertEqual(keyboard_error.exit_code, 130)
+        self.assertEqual(repl_exit.format_message(), "repl exit: interrupted by user")
+        self.assertEqual(repl_exit.exit_code, 130)
+
+        env_error = EnvError.io_failed(OSError("disk failed"))
+
+        self.assertEqual(env_error.format_message(), "env error: io failed: disk failed")
+        self.assertEqual(env_error.exit_code, 1)
 
 
 if __name__ == "__main__":

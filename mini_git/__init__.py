@@ -1,14 +1,10 @@
 from .mini_git import MiniGit, MiniGitResult
-from .objects import Blob, CommitObject, Directory
+from .objects import CommitObject
 from .repository import MiniGitRepository
-from .store import ObjectStore
 
 __all__ = [
-    "Blob",
     "CommitObject",
-    "Directory",
     "MiniGit",
     "MiniGitResult",
     "MiniGitRepository",
-    "ObjectStore",
 ]
