@@ -4,6 +4,7 @@ import hashlib
 import heapq
 from collections import defaultdict, deque
 
+from .errors import RuntimeError
 from .objects import Blob, CommitObject, Directory
 from .store import ObjectStore
 
@@ -60,7 +61,7 @@ class MiniGitRepository:
                     ready.append(child_hash)
 
         if len(result) != len(self.commits):
-            raise ValueError("commit graph has a cycle")
+            raise RuntimeError.cyclic_commit_graph()
 
         return result
 
@@ -89,7 +90,7 @@ class MiniGitRepository:
                     heapq.heappush(ready, child_hash)
 
         if len(result) != len(self.commits):
-            raise ValueError("commit graph has a cycle")
+            raise RuntimeError.cyclic_commit_graph()
 
         return result
 

@@ -2,6 +2,12 @@ import unittest
 from io import StringIO
 
 from mini_git import Blob, Directory, MiniGitRepository
+from mini_git.errors import (
+    AppError,
+    EnvError,
+    RuntimeError,
+    handler_error,
+)
 from mini_git.repl import MiniGitRepl
 
 
@@ -67,6 +73,65 @@ class MiniGitReplTest(unittest.TestCase):
         self.assertIn("parent=None", output)
         self.assertIn("first", output)
         self.assertIn("bye", output)
+
+    def test_repl_routes_errors_to_handler_error(self):
+        input_stream = StringIO("commit\nexit\n")
+        output_stream = StringIO()
+
+        MiniGitRepl(input_stream, output_stream).run()
+
+        output = output_stream.getvalue()
+
+        self.assertIn("app error: usage: commit <message>", output)
+        self.assertIn("bye", output)
+
+    def test_repl_routes_keyboard_interrupt_to_handler_error(self):
+        class InterruptInput:
+            def readline(self):
+                raise KeyboardInterrupt
+
+        output_stream = StringIO()
+
+        MiniGitRepl(InterruptInput(), output_stream).run()
+
+        self.assertIn("env error: interrupted by user", output_stream.getvalue())
+
+
+class ErrorHandlerTest(unittest.TestCase):
+    def test_handler_error_delegates_app_error_message(self):
+        output_stream = StringIO()
+
+        handler_error(AppError("sample"), output_stream)
+
+        self.assertEqual(output_stream.getvalue(), "app error: sample\n")
+
+    def test_handler_error_delegates_runtime_error_message(self):
+        output_stream = StringIO()
+
+        handler_error(RuntimeError("sample"), output_stream)
+
+        self.assertEqual(output_stream.getvalue(), "runtime error: sample\n")
+
+    def test_handler_error_delegates_env_error_message(self):
+        output_stream = StringIO()
+
+        handler_error(EnvError("sample"), output_stream)
+
+        self.assertEqual(output_stream.getvalue(), "env error: sample\n")
+
+    def test_error_classes_create_common_messages_with_methods(self):
+        self.assertEqual(
+            AppError.invalid_command_usage("commit <message>").format_message(),
+            "app error: usage: commit <message>",
+        )
+        self.assertEqual(
+            RuntimeError.cyclic_commit_graph().format_message(),
+            "runtime error: commit graph has a cycle",
+        )
+        self.assertEqual(
+            EnvError.keyboard_interrupt().format_message(),
+            "env error: interrupted by user",
+        )
 
 
 if __name__ == "__main__":

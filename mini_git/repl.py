@@ -3,6 +3,12 @@ from __future__ import annotations
 import shlex
 from typing import TextIO
 
+from .errors import (
+    AppError,
+    EnvError,
+    RuntimeError,
+    handler_error,
+)
 from .objects import Blob, CommitObject, Directory
 from .repository import MiniGitRepository
 
@@ -26,14 +32,23 @@ class MiniGitRepl:
         self._write("Mini Git REPL. Type 'help' for commands.")
 
         while self._running:
-            self._write_prompt()
-            line = self.input_stream.readline()
+            try:
+                self._write_prompt()
+                line = self.input_stream.readline()
+            except KeyboardInterrupt:
+                self._write("")
+                handler_error(EnvError.keyboard_interrupt(), self.output_stream)
+                self._running = False
+                break
 
             if line == "":
                 self._write("")
                 break
 
-            self.execute(line.strip())
+            try:
+                self.execute(line.strip())
+            except (AppError, RuntimeError, EnvError) as error:
+                handler_error(error, self.output_stream)
 
     def execute(self, line: str) -> None:
         if not line:
@@ -42,8 +57,7 @@ class MiniGitRepl:
         try:
             args = shlex.split(line)
         except ValueError as error:
-            self._write(f"error: {error}")
-            return
+            raise AppError.command_parse_failed(str(error)) from error
 
         command = args[0]
         command_args = args[1:]
@@ -68,7 +82,7 @@ class MiniGitRepl:
         elif command == "show":
             self._show(command_args)
         else:
-            self._write(f"unknown command: {command}")
+            raise AppError.unknown_repl_command(command)
 
     def _help(self) -> None:
         self._write(
@@ -90,8 +104,7 @@ class MiniGitRepl:
 
     def _add(self, args: list[str]) -> None:
         if len(args) < 2:
-            self._write("usage: add <path> <content>")
-            return
+            raise AppError.invalid_command_usage("add <path> <content>")
 
         path = args[0]
         content = " ".join(args[1:])
@@ -100,14 +113,12 @@ class MiniGitRepl:
 
     def _remove(self, args: list[str]) -> None:
         if len(args) != 1:
-            self._write("usage: remove <path>")
-            return
+            raise AppError.invalid_command_usage("remove <path>")
 
         path = args[0]
 
         if path not in self.working_tree:
-            self._write(f"not found: {path}")
-            return
+            raise AppError.working_tree_path_not_found(path)
 
         del self.working_tree[path]
         self._write(f"removed {path}")
@@ -126,12 +137,10 @@ class MiniGitRepl:
 
     def _commit(self, args: list[str]) -> None:
         if not args:
-            self._write("usage: commit <message>")
-            return
+            raise AppError.invalid_command_usage("commit <message>")
 
         if not self.working_tree:
-            self._write("nothing to commit")
-            return
+            raise AppError.empty_working_tree_commit()
 
         message = " ".join(args)
         commit_hash = self.repo.commit(dict(self.working_tree), message)
@@ -163,14 +172,12 @@ class MiniGitRepl:
 
     def _show(self, args: list[str]) -> None:
         if len(args) != 1:
-            self._write("usage: show <hash>")
-            return
+            raise AppError.invalid_command_usage("show <hash>")
 
         object_hash = self._resolve_hash(args[0])
 
         if object_hash is None:
-            self._write(f"not found: {args[0]}")
-            return
+            raise AppError.object_hash_not_found(args[0])
 
         obj = self.repo.object_store.get(object_hash)
 
@@ -197,6 +204,9 @@ class MiniGitRepl:
             for object_hash, _ in self.repo.object_store.items()
             if object_hash.startswith(prefix)
         ]
+
+        if len(matches) > 1:
+            raise RuntimeError.ambiguous_object_hash(prefix)
 
         if len(matches) == 1:
             return matches[0]

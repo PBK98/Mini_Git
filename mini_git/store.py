@@ -3,6 +3,8 @@ from __future__ import annotations
 import hashlib
 from typing import Protocol
 
+from .errors import RuntimeError
+
 
 class StoredObject(Protocol):
     def serialize(self) -> str:
@@ -20,11 +22,14 @@ class ObjectStore:
 
     def save_with_hash(self, object_hash: str, obj: StoredObject) -> None:
         if object_hash in self._objects:
-            raise ValueError(f"duplicated object hash: {object_hash}")
+            raise RuntimeError.duplicate_object_hash(object_hash)
         self._objects[object_hash] = obj
 
     def get(self, object_hash: str) -> StoredObject:
-        return self._objects[object_hash]
+        try:
+            return self._objects[object_hash]
+        except KeyError as error:
+            raise RuntimeError.stored_object_not_found(object_hash) from error
 
     def contains(self, object_hash: str) -> bool:
         return object_hash in self._objects
