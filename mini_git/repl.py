@@ -22,9 +22,10 @@ class MiniGitRepl:
         self.app = MiniGit()
         self._running = True
 
-    def run(self) -> None:
+    def run(self) -> int:
         """EOF, exit, quit, 처리된 환경 에러가 나올 때까지 명령을 읽는다."""
         self._write("Mini Git REPL. Type 'help' for commands.")
+        exit_code = 0
 
         while self._running:
             try:
@@ -32,13 +33,14 @@ class MiniGitRepl:
                 line = self.input_stream.readline()
             except BaseException as error:
                 self._write("")
-                handler_error(error, self.output_stream)
+                exit_code = handler_error(error, self.output_stream)
                 self._running = False
                 break
 
             if line == "":
-                # EOF는 Ctrl-D나 파이프 입력 종료처럼 입력 스트림이 끝났다는 뜻이다.
+                # readline()은 Ctrl-D/EOF를 예외가 아니라 빈 문자열로 알려준다.
                 self._write("")
+                exit_code = handler_error(EOFError(), self.output_stream)
                 break
 
             try:
@@ -46,9 +48,11 @@ class MiniGitRepl:
                 self._write_lines(result.lines)
                 self._running = not result.should_exit
             except BaseException as error:
-                handler_error(error, self.output_stream)
+                exit_code = handler_error(error, self.output_stream)
                 if not isinstance(error, (AppError, RuntimeError)):
                     self._running = False
+
+        return exit_code
 
     def _write(self, value: str) -> None:
         """설정된 출력 스트림에 한 줄을 쓴다."""

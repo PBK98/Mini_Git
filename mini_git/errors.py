@@ -7,24 +7,25 @@ from typing import TextIO
 class AppError(Exception):
     """REPL 명령이나 사용자에게 보이는 앱 규칙에서 발생하는 에러다."""
 
-    def __init__(self, message: str) -> None:
+    def __init__(self, message: str, exit_code: int = 1) -> None:
         super().__init__(message)
         self.message = message
+        self.exit_code = exit_code
 
     @classmethod
     def command_parse_failed(cls, message: str) -> AppError:
         """입력을 명령어 인자로 나눌 수 없을 때 사용한다."""
-        return cls(f"could not parse command: {message}")
+        return cls(f"could not parse command: {message}", exit_code=2)
 
     @classmethod
     def unknown_repl_command(cls, command: str) -> AppError:
         """REPL이 지원하지 않는 명령어를 입력했을 때 사용한다."""
-        return cls(f"unknown command: {command}")
+        return cls(f"unknown command: {command}", exit_code=2)
 
     @classmethod
     def invalid_command_usage(cls, command_usage: str) -> AppError:
         """알려진 명령어의 인자가 부족하거나 잘못됐을 때 사용한다."""
-        return cls(f"usage: {command_usage}")
+        return cls(f"usage: {command_usage}", exit_code=2)
 
     @classmethod
     def working_tree_path_not_found(cls, target: str) -> AppError:
@@ -47,6 +48,8 @@ class AppError(Exception):
 
 class RuntimeError(Exception):
     """저장소나 객체 저장소의 내부 상태에서 발생하는 에러다."""
+
+    exit_code = 1
 
     def __init__(self, message: str) -> None:
         super().__init__(message)
@@ -86,14 +89,20 @@ class RuntimeError(Exception):
 class EnvError(Exception):
     """실행 환경 때문에 발생하는 에러다."""
 
-    def __init__(self, message: str) -> None:
+    def __init__(self, message: str, exit_code: int = 1) -> None:
         super().__init__(message)
         self.message = message
+        self.exit_code = exit_code
 
     @classmethod
     def keyboard_interrupt(cls) -> EnvError:
         """사용자가 Ctrl-C로 REPL을 중단했을 때 사용한다."""
-        return cls("interrupted by user")
+        return cls("interrupted by user", exit_code=130)
+
+    @classmethod
+    def eof_error(cls) -> EnvError:
+        """입력 스트림에서 EOFError가 발생했을 때 사용한다."""
+        return cls("unexpected end of input", exit_code=1)
 
     @classmethod
     def io_failed(cls, error: OSError) -> EnvError:
@@ -110,9 +119,10 @@ HandledError = AppError | RuntimeError | EnvError
 class HandlerError:
     """모든 예외를 분류하고 출력하는 단일 에러 처리 진입점이다."""
 
-    def __call__(self, error: BaseException, output_stream: TextIO) -> None:
+    def __call__(self, error: BaseException, output_stream: TextIO) -> int:
         handled_error = self._to_handled_error(error)
         self._write(handled_error.format_message(), output_stream)
+        return handled_error.exit_code
 
     def _to_handled_error(self, error: BaseException) -> HandledError:
         """raw 예외를 AppError, RuntimeError, EnvError 중 하나로 변환한다."""
@@ -120,6 +130,8 @@ class HandlerError:
             return error
         if isinstance(error, KeyboardInterrupt):
             return EnvError.keyboard_interrupt()
+        if isinstance(error, EOFError):
+            return EnvError.eof_error()
         if isinstance(error, OSError):
             return EnvError.io_failed(error)
         return RuntimeError.unexpected_exception(error)
