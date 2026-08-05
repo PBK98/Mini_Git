@@ -17,6 +17,8 @@ PROMPT = "mini-git> "
 
 
 class MiniGitRepl:
+    """메모리 기반 저장소를 조작하는 작은 명령 루프다."""
+
     def __init__(
         self,
         input_stream: TextIO,
@@ -29,6 +31,7 @@ class MiniGitRepl:
         self._running = True
 
     def run(self) -> None:
+        """EOF, exit, quit, 처리된 환경 에러가 나올 때까지 명령을 읽는다."""
         self._write("Mini Git REPL. Type 'help' for commands.")
 
         while self._running:
@@ -42,6 +45,7 @@ class MiniGitRepl:
                 break
 
             if line == "":
+                # EOF는 Ctrl-D나 파이프 입력 종료처럼 입력 스트림이 끝났다는 뜻이다.
                 self._write("")
                 break
 
@@ -51,6 +55,7 @@ class MiniGitRepl:
                 handler_error(error, self.output_stream)
 
     def execute(self, line: str) -> None:
+        """한 줄을 파싱하고 알맞은 명령 메서드로 전달한다."""
         if not line:
             return
 
@@ -85,6 +90,7 @@ class MiniGitRepl:
             raise AppError.unknown_repl_command(command)
 
     def _help(self) -> None:
+        """지원하는 REPL 명령어를 출력한다."""
         self._write(
             "\n".join(
                 [
@@ -103,6 +109,7 @@ class MiniGitRepl:
         )
 
     def _add(self, args: list[str]) -> None:
+        """메모리 작업 트리에 파일 하나를 추가하거나 수정한다."""
         if len(args) < 2:
             raise AppError.invalid_command_usage("add <path> <content>")
 
@@ -112,6 +119,7 @@ class MiniGitRepl:
         self._write(f"added {path}")
 
     def _remove(self, args: list[str]) -> None:
+        """작업 트리에서 파일 경로 하나를 제거한다."""
         if len(args) != 1:
             raise AppError.invalid_command_usage("remove <path>")
 
@@ -124,6 +132,7 @@ class MiniGitRepl:
         self._write(f"removed {path}")
 
     def _status(self) -> None:
+        """HEAD와 현재 작업 트리에 있는 파일 목록을 보여준다."""
         head = self.repo.head_hash[:8] if self.repo.head_hash is not None else "None"
         self._write(f"HEAD: {head}")
 
@@ -136,6 +145,7 @@ class MiniGitRepl:
             self._write(f"- {path}")
 
     def _commit(self, args: list[str]) -> None:
+        """현재 작업 트리 스냅샷으로 커밋을 만든다."""
         if not args:
             raise AppError.invalid_command_usage("commit <message>")
 
@@ -147,6 +157,7 @@ class MiniGitRepl:
         self._write(f"committed {commit_hash}")
 
     def _log(self) -> None:
+        """부모가 자식보다 먼저 나오는 위상 정렬 순서로 커밋을 출력한다."""
         commits = self.repo.sorted_commits()
 
         if not commits:
@@ -160,6 +171,7 @@ class MiniGitRepl:
             )
 
     def _objects(self) -> None:
+        """저장된 객체 해시와 객체 타입을 출력한다."""
         objects = self.repo.object_store.items()
 
         if not objects:
@@ -171,6 +183,7 @@ class MiniGitRepl:
             self._write(f"{object_hash[:8]} {object_type}")
 
     def _show(self, args: list[str]) -> None:
+        """전체 해시 또는 유일한 해시 prefix로 객체 하나를 보여준다."""
         if len(args) != 1:
             raise AppError.invalid_command_usage("show <hash>")
 
@@ -199,6 +212,7 @@ class MiniGitRepl:
             self._write(obj.serialize())
 
     def _resolve_hash(self, prefix: str) -> str | None:
+        """show 명령에서 전체 해시와 유일한 prefix를 모두 허용한다."""
         matches = [
             object_hash
             for object_hash, _ in self.repo.object_store.items()
@@ -214,7 +228,9 @@ class MiniGitRepl:
         return prefix if self.repo.object_store.contains(prefix) else None
 
     def _write(self, value: str) -> None:
+        """설정된 출력 스트림에 한 줄을 쓴다."""
         print(value, file=self.output_stream)
 
     def _write_prompt(self) -> None:
+        """줄바꿈 없이 프롬프트를 출력한다."""
         print(PROMPT, end="", file=self.output_stream, flush=True)
