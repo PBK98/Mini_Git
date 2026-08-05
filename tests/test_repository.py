@@ -1,6 +1,8 @@
 import unittest
+from io import StringIO
 
 from mini_git import Blob, Directory, MiniGitRepository
+from mini_git.repl import MiniGitRepl
 
 
 class MiniGitRepositoryTest(unittest.TestCase):
@@ -39,6 +41,32 @@ class MiniGitRepositoryTest(unittest.TestCase):
         sorted_hashes = [commit.commit_hash for commit in repo.sorted_commits()]
 
         self.assertLess(sorted_hashes.index(first_hash), sorted_hashes.index(second_hash))
+
+
+class MiniGitReplTest(unittest.TestCase):
+    def test_repl_add_commit_and_log(self):
+        input_stream = StringIO(
+            "\n".join(
+                [
+                    "add README.md hello",
+                    "commit first",
+                    "log",
+                    "exit",
+                    "",
+                ]
+            )
+        )
+        output_stream = StringIO()
+
+        MiniGitRepl(input_stream, output_stream).run()
+
+        output = output_stream.getvalue()
+
+        self.assertIn("added README.md", output)
+        self.assertIn("committed ", output)
+        self.assertIn("parent=None", output)
+        self.assertIn("first", output)
+        self.assertIn("bye", output)
 
 
 if __name__ == "__main__":
