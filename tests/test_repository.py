@@ -40,7 +40,7 @@ class MiniGitRepositoryTest(unittest.TestCase):
         self.assertNotEqual(first_hash, second_hash)
 
     @patch("mini_git.repository.datetime")
-    def test_commit_hashes_remain_unique_after_reinitialization(self, datetime_mock):
+    def test_commit_hashes_remain_unique_after_user_change(self, datetime_mock):
         datetime_mock.now.return_value.strftime.return_value = "2026-01-01 00:00:00"
         repo = MiniGitRepository()
         repo.init("Alice")
@@ -51,6 +51,20 @@ class MiniGitRepositoryTest(unittest.TestCase):
 
         self.assertNotEqual(first_hash, second_hash)
         self.assertEqual(len(repo.commits), 2)
+
+    @patch("mini_git.repository.datetime")
+    def test_commit_hashes_remain_unique_after_repository_reset(self, datetime_mock):
+        datetime_mock.now.return_value.strftime.return_value = "2026-01-01 00:00:00"
+        repo = MiniGitRepository()
+        repo.init("Alice")
+        first_hash = repo.commit("same message").commit_hash
+
+        repo.init("Alice", reset=True)
+        second_hash = repo.commit("same message").commit_hash
+
+        self.assertNotEqual(first_hash, second_hash)
+        self.assertNotIn(first_hash, repo.commits)
+        self.assertEqual(len(repo.commits), 1)
 
     def test_reinitialization_changes_author_without_deleting_repository_data(self):
         repo = MiniGitRepository()
@@ -75,6 +89,31 @@ class MiniGitRepositoryTest(unittest.TestCase):
         self.assertEqual(bob_commit.parents, (alice_commit.commit_hash,))
         self.assertEqual(repo.current_branch, "feature")
         self.assertEqual(repo.branches["main"], alice_commit.commit_hash)
+
+    def test_repository_reset_deletes_data_and_recreates_main_branch(self):
+        repo = MiniGitRepository()
+        repo.init("Alice")
+        old_commit = repo.commit("old login work")
+        repo.create_branch("feature")
+        repo.switch("feature")
+
+        result = repo.init("Bob", reset=True)
+
+        self.assertEqual(
+            result,
+            [
+                "Reinitialized repository.",
+                "Current branch: main",
+                "Current user: Bob",
+            ],
+        )
+        self.assertNotIn(old_commit.commit_hash, repo.commits)
+        self.assertEqual(repo.commits, {})
+        self.assertEqual(repo.branches, {"main": None})
+        self.assertEqual(repo.current_branch, "main")
+        self.assertEqual(repo.current_author, "Bob")
+        self.assertEqual(dict(repo.keyword_index), {})
+        self.assertEqual(dict(repo.author_index), {})
 
     def test_current_user_returns_the_latest_initialized_user(self):
         repo = MiniGitRepository()
@@ -207,6 +246,43 @@ class MiniGitCommandTest(unittest.TestCase):
 
         self.assertEqual(alice_result.lines, ["Current user: Alice"])
         self.assertEqual(bob_result.lines, ["Current user: Bob"])
+
+    def test_init_reset_option_resets_repository_from_the_command(self):
+        app = MiniGit()
+        app.execute("init Alice")
+        app.execute("commit old")
+        app.execute("branch feature")
+
+        result = app.execute("init --reset Bob")
+
+        self.assertEqual(
+            result.lines,
+            [
+                "Reinitialized repository.",
+                "Current branch: main",
+                "Current user: Bob",
+            ],
+        )
+        self.assertEqual(app.execute("log").lines, ["no commits"])
+        self.assertEqual(app.execute("branch").lines, ["Branches:", "* main"])
+        self.assertEqual(app.execute("whoiam").lines, ["Current user: Bob"])
+
+    def test_init_rejects_invalid_reset_options(self):
+        app = MiniGit()
+
+        for command in (
+            "init --reset",
+            'init --reset ""',
+            "init --unknown Alice",
+            "init Alice --reset",
+        ):
+            with self.subTest(command=command):
+                with self.assertRaises(AppError) as context:
+                    app.execute(command)
+                self.assertEqual(
+                    context.exception.message,
+                    "usage: init [--reset] <user_name>",
+                )
 
     def test_whoiam_requires_init_and_rejects_arguments(self):
         app = MiniGit()

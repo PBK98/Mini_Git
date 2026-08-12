@@ -22,9 +22,11 @@ class MiniGitRepository:
         self._commit_counter = 0
         self._issued_hashes: set[str] = set()
 
-    def init(self, user_name: str) -> list[str]:
-        """저장소를 처음 만들거나 기존 저장소의 현재 사용자를 변경한다."""
-        if self.current_branch is not None:
+    def init(self, user_name: str, reset: bool = False) -> list[str]:
+        """저장소를 만들거나 사용자를 변경하고, 요청 시 저장소를 초기화한다."""
+        already_initialized = self.current_branch is not None
+
+        if already_initialized and not reset:
             self.current_author = user_name
             return [
                 "Repository already initialized.",
@@ -32,6 +34,21 @@ class MiniGitRepository:
                 f"Current user: {user_name}",
             ]
 
+        self._reset_repository(user_name)
+        status = (
+            "Reinitialized repository."
+            if already_initialized and reset
+            else "Initialized repository."
+        )
+
+        return [
+            status,
+            "Current branch: main",
+            f"Current user: {user_name}",
+        ]
+
+    def _reset_repository(self, user_name: str) -> None:
+        """커밋과 브랜치, 그래프, 검색 인덱스를 초기 상태로 되돌린다."""
         self.commits = {}
         self.children = defaultdict(list)
         self.branches = {"main": None}
@@ -39,12 +56,6 @@ class MiniGitRepository:
         self.current_author = user_name
         self.keyword_index = defaultdict(list)
         self.author_index = defaultdict(list)
-
-        return [
-            "Initialized repository.",
-            "Current branch: main",
-            f"Current user: {user_name}",
-        ]
 
     def create_branch(self, branch_name: str) -> list[str]:
         """현재 HEAD를 가리키는 새 브랜치를 만든다."""

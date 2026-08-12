@@ -78,6 +78,17 @@ Current user: Bob
 
 이후 생성한 커밋의 작성자는 `Bob`으로 기록되며, `LOG --sort-by=date`와 `LOG --sort-by=author`에는 이전 작성자의 커밋도 함께 출력됩니다.
 
+기존 커밋과 브랜치, 그래프, 검색 인덱스를 삭제하고 새 저장소 상태로 돌아가려면 `--reset` 옵션을 사용합니다.
+
+```text
+mini-git> init --reset Carol
+Reinitialized repository.
+Current branch: main
+Current user: Carol
+```
+
+초기화 후에는 `main` 브랜치만 존재하고 커밋 로그는 비어 있습니다. 세션 내 커밋 해시 중복을 막기 위한 내부 카운터와 발급 해시 기록은 유지됩니다.
+
 ### WHOIAM
 
 현재 커밋 작성자로 설정된 사용자를 확인합니다.

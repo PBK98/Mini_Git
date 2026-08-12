@@ -72,7 +72,8 @@ class MiniGit:
         return MiniGitResult(
             [
                 "commands:",
-                "  init <user_name>              initialize repository",
+                "  init <user_name>              initialize or change current user",
+                "  init --reset <user_name>      reset repository and current user",
                 "  whoiam                        show current user",
                 "  branch                        list branches and show current branch",
                 "  branch <branch_name>          create branch at current HEAD",
@@ -90,10 +91,20 @@ class MiniGit:
         )
 
     def _init(self, args: list[str]) -> MiniGitResult:
-        """저장소를 초기화한다."""
-        if len(args) != 1 or not args[0].strip():
-            raise AppError.invalid_command_usage("init <user_name>")
-        return MiniGitResult(self.repo.init(args[0]))
+        """저장소를 만들거나 작성자를 변경하고, 옵션에 따라 초기화한다."""
+        reset = len(args) == 2 and args[0] == "--reset"
+
+        if reset:
+            user_name = args[1]
+        elif len(args) == 1 and not args[0].startswith("--"):
+            user_name = args[0]
+        else:
+            raise AppError.invalid_command_usage("init [--reset] <user_name>")
+
+        if not user_name.strip():
+            raise AppError.invalid_command_usage("init [--reset] <user_name>")
+
+        return MiniGitResult(self.repo.init(user_name, reset=reset))
 
     def _whoiam(self, args: list[str]) -> MiniGitResult:
         """현재 커밋 작성자를 출력한다."""
