@@ -1,6 +1,12 @@
+import sys
 import unittest
 from io import StringIO
+from pathlib import Path
 from unittest.mock import patch
+
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
 
 from mini_git import CommitObject, MiniGit, MiniGitRepository
 from mini_git.errors import (
@@ -132,6 +138,51 @@ class MiniGitRepositoryTest(unittest.TestCase):
         sorted_hashes = [commit.commit_hash for commit in repo.sorted_commits()]
 
         self.assertLess(sorted_hashes.index(first_hash), sorted_hashes.index(second_hash))
+
+    def test_topological_sort_uses_graph_order_not_storage_order(self):
+        repo = MiniGitRepository()
+        repo.init("Alice")
+
+        root_commit = make_commit("root")
+        parent_commit = make_commit("parent", ("root",))
+        child_commit = make_commit("child", ("parent",))
+
+        # 딕셔너리에는 실제 그래프 순서와 반대로 커밋을 저장한다.
+        repo.commits = {
+            "child": child_commit,
+            "root": root_commit,
+            "parent": parent_commit,
+        }
+        repo.children["root"] = ["parent"]
+        repo.children["parent"] = ["child"]
+
+        commits = repo.sorted_commits()
+        sorted_hashes = [commit.commit_hash for commit in commits]
+
+        self.assertEqual(sorted_hashes, ["root", "parent", "child"])
+
+        positions = {
+            commit.commit_hash: index
+            for index, commit in enumerate(commits)
+        }
+        parent_before_child = True
+
+        for commit in commits:
+            for parent_hash in commit.parents:
+                if positions[parent_hash] >= positions[commit.commit_hash]:
+                    parent_before_child = False
+
+        if __name__ == "__main__":
+            print("\n[위상 정렬 검증]")
+            print(f"저장 순서: {' -> '.join(repo.commits)}")
+            print(f"정렬 결과: {' -> '.join(sorted_hashes)}")
+            print(
+                "부모 우선 조건: "
+                f"{'통과' if parent_before_child else '실패'}",
+                flush=True,
+            )
+
+        self.assertTrue(parent_before_child)
 
     def test_shortest_path_does_not_choose_a_longer_lexicographical_path(self):
         repo = MiniGitRepository()
