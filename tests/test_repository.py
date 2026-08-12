@@ -201,6 +201,30 @@ class MiniGitCommandTest(unittest.TestCase):
         self.assertIn("Add login feature", keyword_result.lines[1])
         self.assertIn("Found 2 commits:", author_result.lines[0])
 
+    def test_author_search_uses_the_init_user_name(self):
+        app = MiniGit()
+        app.execute("init test")
+        app.execute("commit first")
+
+        author_result = app.execute("search --author=test")
+        branch_name_result = app.execute("search --author=main")
+
+        self.assertEqual(author_result.lines[0], "Found 1 commit:")
+        self.assertEqual(branch_name_result.lines, ["Found 0 commits:"])
+
+    def test_search_rejects_an_unknown_option(self):
+        app = MiniGit()
+        app.execute("init test")
+        app.execute("commit first")
+
+        with self.assertRaises(AppError) as context:
+            app.execute("search --autor=test")
+
+        self.assertEqual(
+            context.exception.message,
+            "usage: search <keyword> | search --author=<name>",
+        )
+
     def test_minigit_searches_a_quoted_multiword_keyword(self):
         app = MiniGit()
         app.execute("init Alice")

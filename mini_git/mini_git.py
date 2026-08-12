@@ -151,6 +151,10 @@ class MiniGit:
             if not author.strip():
                 raise AppError.invalid_command_usage("search --author=<name>")
             commits = self.repo.search_author(author)
+        elif args[0].startswith("--"):
+            raise AppError.invalid_command_usage(
+                "search <keyword> | search --author=<name>"
+            )
         else:
             commits = self.repo.search_keyword(args[0])
 

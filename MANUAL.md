@@ -201,6 +201,8 @@ search "login feature"
 SEARCH --author=<name>
 ```
 
+`name`에는 브랜치명이 아니라 `INIT`에서 설정한 사용자명을 입력합니다. 옵션 이름은 `--author`입니다.
+
 예시:
 
 ```text
