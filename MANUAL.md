@@ -45,7 +45,9 @@ SEARCH "login"
 
 ### INIT
 
-저장소를 초기화하고 `main` 브랜치와 현재 작성자를 설정합니다.
+처음 실행하면 저장소를 초기화하고 `main` 브랜치와 현재 작성자를 설정합니다.
+
+이미 초기화된 상태에서 다른 사용자명으로 다시 실행하면 기존 커밋, 브랜치, HEAD와 검색 인덱스는 유지되고 현재 작성자만 변경됩니다.
 
 ```text
 INIT <user_name>
@@ -64,6 +66,17 @@ Initialized repository.
 Current branch: main
 Current user: Alice
 ```
+
+작성자 변경 예시:
+
+```text
+mini-git> init Bob
+Repository already initialized.
+Current branch: main
+Current user: Bob
+```
+
+이후 생성한 커밋의 작성자는 `Bob`으로 기록되며, `LOG --sort-by=date`와 `LOG --sort-by=author`에는 이전 작성자의 커밋도 함께 출력됩니다.
 
 ### BRANCH
 

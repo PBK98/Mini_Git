@@ -23,7 +23,15 @@ class MiniGitRepository:
         self._issued_hashes: set[str] = set()
 
     def init(self, user_name: str) -> list[str]:
-        """저장소를 초기화하고 main 브랜치와 현재 사용자를 설정한다."""
+        """저장소를 처음 만들거나 기존 저장소의 현재 사용자를 변경한다."""
+        if self.current_branch is not None:
+            self.current_author = user_name
+            return [
+                "Repository already initialized.",
+                f"Current branch: {self.current_branch}",
+                f"Current user: {user_name}",
+            ]
+
         self.commits = {}
         self.children = defaultdict(list)
         self.branches = {"main": None}

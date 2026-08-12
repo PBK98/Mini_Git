@@ -50,6 +50,31 @@ class MiniGitRepositoryTest(unittest.TestCase):
         second_hash = repo.commit("same message").commit_hash
 
         self.assertNotEqual(first_hash, second_hash)
+        self.assertEqual(len(repo.commits), 2)
+
+    def test_reinitialization_changes_author_without_deleting_repository_data(self):
+        repo = MiniGitRepository()
+        repo.init("Alice")
+        alice_commit = repo.commit("Alice commit")
+        repo.create_branch("feature")
+        repo.switch("feature")
+
+        result = repo.init("Bob")
+        bob_commit = repo.commit("Bob commit")
+
+        self.assertEqual(
+            result,
+            [
+                "Repository already initialized.",
+                "Current branch: feature",
+                "Current user: Bob",
+            ],
+        )
+        self.assertIn(alice_commit.commit_hash, repo.commits)
+        self.assertEqual(bob_commit.author, "Bob")
+        self.assertEqual(bob_commit.parents, (alice_commit.commit_hash,))
+        self.assertEqual(repo.current_branch, "feature")
+        self.assertEqual(repo.branches["main"], alice_commit.commit_hash)
 
     def test_topological_sort_returns_parent_before_child(self):
         repo = MiniGitRepository()
@@ -200,6 +225,25 @@ class MiniGitCommandTest(unittest.TestCase):
         self.assertIn("Found 1 commit:", keyword_result.lines[0])
         self.assertIn("Add login feature", keyword_result.lines[1])
         self.assertIn("Found 2 commits:", author_result.lines[0])
+
+    def test_sorted_logs_include_commits_from_every_initialized_user(self):
+        app = MiniGit()
+        app.execute("init Alice")
+        app.execute("commit Alice-work")
+        app.execute("init Bob")
+        app.execute("commit Bob-work")
+
+        date_result = app.execute("log --sort-by=date")
+        author_result = app.execute("log --sort-by=author")
+        author_headers = [
+            line for line in author_result.lines if line.startswith("commit ")
+        ]
+
+        self.assertTrue(any("(Alice," in line for line in date_result.lines))
+        self.assertTrue(any("(Bob," in line for line in date_result.lines))
+        self.assertEqual(len(author_headers), 2)
+        self.assertIn("(Alice,", author_headers[0])
+        self.assertIn("(Bob,", author_headers[1])
 
     def test_author_search_uses_the_init_user_name(self):
         app = MiniGit()
