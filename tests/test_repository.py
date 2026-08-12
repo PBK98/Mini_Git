@@ -166,6 +166,27 @@ class MiniGitCommandTest(unittest.TestCase):
         self.assertIn("commit ", log_result.lines[0])
         self.assertIn("[main]", log_result.lines[0])
 
+    def test_branch_lists_all_branches_and_marks_the_current_branch(self):
+        app = MiniGit()
+        app.execute("init Alice")
+        app.execute("commit first")
+        app.execute("branch feature")
+
+        main_result = app.execute("branch")
+        app.execute("switch feature")
+        feature_result = app.execute("branch")
+
+        self.assertEqual(main_result.lines, ["Branches:", "* main", "  feature"])
+        self.assertEqual(feature_result.lines, ["Branches:", "  main", "* feature"])
+
+    def test_branch_list_requires_init(self):
+        app = MiniGit()
+
+        with self.assertRaises(AppError) as context:
+            app.execute("branch")
+
+        self.assertEqual(context.exception.message, "repository is not initialized")
+
     def test_minigit_searches_by_keyword_and_author(self):
         app = MiniGit()
 

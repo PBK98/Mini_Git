@@ -29,6 +29,7 @@ python -m mini_git
 | 명령어 | 설명 |
 | --- | --- |
 | `INIT <user_name>` | 저장소를 초기화하고 `main` 브랜치와 작성자를 설정합니다. |
+| `BRANCH` | 생성된 브랜치 목록을 출력하고 현재 브랜치에 `*`를 표시합니다. |
 | `BRANCH <branch_name>` | 현재 HEAD를 가리키는 브랜치를 생성합니다. 첫 커밋 이후 사용할 수 있습니다. |
 | `SWITCH <branch_name>` | 현재 브랜치를 변경합니다. |
 | `COMMIT <message>` | 현재 HEAD를 부모로 하는 커밋을 생성합니다. |

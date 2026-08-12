@@ -66,6 +66,7 @@ class MiniGit:
         return [
             "commands:",
             "  init <user_name>              initialize repository",
+            "  branch                        list branches and show current branch",
             "  branch <branch_name>          create branch at current HEAD",
             "  switch <branch_name>          switch current branch",
             "  commit <message>              create commit from current HEAD",
@@ -86,9 +87,11 @@ class MiniGit:
         return self.repo.init(args[0])
 
     def _branch(self, args: list[str]) -> list[str]:
-        """브랜치를 생성한다."""
+        """브랜치 목록을 출력하거나 새 브랜치를 생성한다."""
+        if not args:
+            return self.repo.list_branches()
         if len(args) != 1 or not args[0].strip():
-            raise AppError.invalid_command_usage("branch <branch_name>")
+            raise AppError.invalid_command_usage("branch [<branch_name>]")
         return self.repo.create_branch(args[0])
 
     def _switch(self, args: list[str]) -> list[str]:

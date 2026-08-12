@@ -52,6 +52,17 @@ class MiniGitRepository:
         self.branches[branch_name] = head_hash
         return [f"Created branch: {branch_name}"]
 
+    def list_branches(self) -> list[str]:
+        """생성된 브랜치와 현재 브랜치를 표시한다."""
+        self._require_initialized()
+        lines = ["Branches:"]
+
+        for branch_name in self.branches:
+            marker = "*" if branch_name == self.current_branch else " "
+            lines.append(f"{marker} {branch_name}")
+
+        return lines
+
     def switch(self, branch_name: str) -> list[str]:
         """현재 브랜치를 지정한 브랜치로 변경한다."""
         self._require_initialized()
