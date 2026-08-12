@@ -78,6 +78,20 @@ Current user: Bob
 
 이후 생성한 커밋의 작성자는 `Bob`으로 기록되며, `LOG --sort-by=date`와 `LOG --sort-by=author`에는 이전 작성자의 커밋도 함께 출력됩니다.
 
+### WHOIAM
+
+현재 커밋 작성자로 설정된 사용자를 확인합니다.
+
+```text
+WHOIAM
+```
+
+출력 예시:
+
+```text
+Current user: Bob
+```
+
 ### BRANCH
 
 인자 없이 실행하면 생성된 브랜치 목록을 출력합니다. 현재 브랜치 앞에는 `*`가 표시됩니다.

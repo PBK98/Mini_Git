@@ -44,6 +44,8 @@ class MiniGit:
             return MiniGitResult(self._help())
         if command == "init":
             return MiniGitResult(self._init(command_args))
+        if command == "whoiam":
+            return MiniGitResult(self._whoiam(command_args))
         if command == "branch":
             return MiniGitResult(self._branch(command_args))
         if command == "switch":
@@ -66,6 +68,7 @@ class MiniGit:
         return [
             "commands:",
             "  init <user_name>              initialize repository",
+            "  whoiam                        show current user",
             "  branch                        list branches and show current branch",
             "  branch <branch_name>          create branch at current HEAD",
             "  switch <branch_name>          switch current branch",
@@ -85,6 +88,12 @@ class MiniGit:
         if len(args) != 1 or not args[0].strip():
             raise AppError.invalid_command_usage("init <user_name>")
         return self.repo.init(args[0])
+
+    def _whoiam(self, args: list[str]) -> list[str]:
+        """현재 커밋 작성자를 출력한다."""
+        if args:
+            raise AppError.invalid_command_usage("whoiam")
+        return self.repo.current_user()
 
     def _branch(self, args: list[str]) -> list[str]:
         """브랜치 목록을 출력하거나 새 브랜치를 생성한다."""

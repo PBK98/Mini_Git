@@ -71,6 +71,11 @@ class MiniGitRepository:
 
         return lines
 
+    def current_user(self) -> list[str]:
+        """현재 커밋 작성자로 설정된 사용자를 반환한다."""
+        self._require_initialized()
+        return [f"Current user: {self._current_author_name()}"]
+
     def switch(self, branch_name: str) -> list[str]:
         """현재 브랜치를 지정한 브랜치로 변경한다."""
         self._require_initialized()

@@ -76,6 +76,13 @@ class MiniGitRepositoryTest(unittest.TestCase):
         self.assertEqual(repo.current_branch, "feature")
         self.assertEqual(repo.branches["main"], alice_commit.commit_hash)
 
+    def test_current_user_returns_the_latest_initialized_user(self):
+        repo = MiniGitRepository()
+        repo.init("Alice")
+        repo.init("Bob")
+
+        self.assertEqual(repo.current_user(), ["Current user: Bob"])
+
     def test_topological_sort_returns_parent_before_child(self):
         repo = MiniGitRepository()
         repo.init("Alice")
@@ -190,6 +197,31 @@ class MiniGitCommandTest(unittest.TestCase):
         self.assertEqual(switch_result.lines, ["Switched to branch: feature"])
         self.assertIn("commit ", log_result.lines[0])
         self.assertIn("[main]", log_result.lines[0])
+
+    def test_whoiam_shows_the_current_user_after_user_change(self):
+        app = MiniGit()
+        app.execute("init Alice")
+        alice_result = app.execute("WHOIAM")
+        app.execute("init Bob")
+        bob_result = app.execute("whoiam")
+
+        self.assertEqual(alice_result.lines, ["Current user: Alice"])
+        self.assertEqual(bob_result.lines, ["Current user: Bob"])
+
+    def test_whoiam_requires_init_and_rejects_arguments(self):
+        app = MiniGit()
+
+        with self.assertRaises(AppError) as uninitialized_context:
+            app.execute("whoiam")
+        self.assertEqual(
+            uninitialized_context.exception.message,
+            "repository is not initialized",
+        )
+
+        app.execute("init Alice")
+        with self.assertRaises(AppError) as args_context:
+            app.execute("whoiam Alice")
+        self.assertEqual(args_context.exception.message, "usage: whoiam")
 
     def test_branch_lists_all_branches_and_marks_the_current_branch(self):
         app = MiniGit()
