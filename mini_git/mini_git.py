@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import shlex
+from collections.abc import Callable
 
 from .errors import AppError
 from .objects import CommitObject
@@ -15,11 +16,29 @@ class MiniGitResult:
         self.should_exit = should_exit
 
 
+CommandHandler = Callable[[list[str]], MiniGitResult]
+
+
 class MiniGit:
     """MiniGit 명령을 파싱하고 실제 저장소 기능을 실행한다."""
 
     def __init__(self) -> None:
         self.repo = MiniGitRepository()
+        exit_handler = self._exit
+        self._command_handlers: dict[str, CommandHandler] = {
+            "exit": exit_handler,
+            "quit": exit_handler,
+            "help": self._help,
+            "init": self._init,
+            "whoiam": self._whoiam,
+            "branch": self._branch,
+            "switch": self._switch,
+            "commit": self._commit,
+            "log": self._log,
+            "path": self._path,
+            "ancestors": self._ancestors,
+            "search": self._search,
+        }
 
     def execute(self, line: str) -> MiniGitResult:
         """한 줄 명령을 실행하고 출력할 문자열 목록을 반환한다."""
@@ -33,109 +52,100 @@ class MiniGit:
 
         command = args[0].lower()
         command_args = args[1:]
+        handler = self._command_handlers.get(command)
 
-        if command in {"exit", "quit"}:
-            if command_args:
-                raise AppError.invalid_command_usage(command)
-            return MiniGitResult(["bye"], should_exit=True)
-        if command == "help":
-            if command_args:
-                raise AppError.invalid_command_usage("help")
-            return MiniGitResult(self._help())
-        if command == "init":
-            return MiniGitResult(self._init(command_args))
-        if command == "whoiam":
-            return MiniGitResult(self._whoiam(command_args))
-        if command == "branch":
-            return MiniGitResult(self._branch(command_args))
-        if command == "switch":
-            return MiniGitResult(self._switch(command_args))
-        if command == "commit":
-            return MiniGitResult(self._commit(command_args))
-        if command == "log":
-            return MiniGitResult(self._log(command_args))
-        if command == "path":
-            return MiniGitResult(self._path(command_args))
-        if command == "ancestors":
-            return MiniGitResult(self._ancestors(command_args))
-        if command == "search":
-            return MiniGitResult(self._search(command_args))
+        if handler is None:
+            raise AppError.unknown_repl_command(args[0])
 
-        raise AppError.unknown_repl_command(args[0])
+        return handler(command_args)
 
-    def _help(self) -> list[str]:
+    def _exit(self, args: list[str]) -> MiniGitResult:
+        """exit과 quit 명령으로 REPL 종료를 요청한다."""
+        if args:
+            raise AppError.invalid_command_usage("exit | quit")
+        return MiniGitResult(["bye"], should_exit=True)
+
+    def _help(self, args: list[str]) -> MiniGitResult:
         """지원하는 MiniGit 명령어를 반환한다."""
-        return [
-            "commands:",
-            "  init <user_name>              initialize repository",
-            "  whoiam                        show current user",
-            "  branch                        list branches and show current branch",
-            "  branch <branch_name>          create branch at current HEAD",
-            "  switch <branch_name>          switch current branch",
-            "  commit <message>              create commit from current HEAD",
-            "  log                           show commits in topological order",
-            "  log --sort-by=date|author     show sorted commits",
-            "  path <commit1> <commit2>      show shortest path",
-            "  ancestors <commit_hash>       show ancestor commits",
-            "  search <keyword>              search commits by message keyword",
-            "  search --author=<name>        search commits by author",
-            "  help                          show this help",
-            "  exit                          leave the REPL",
-        ]
+        if args:
+            raise AppError.invalid_command_usage("help")
+        return MiniGitResult(
+            [
+                "commands:",
+                "  init <user_name>              initialize repository",
+                "  whoiam                        show current user",
+                "  branch                        list branches and show current branch",
+                "  branch <branch_name>          create branch at current HEAD",
+                "  switch <branch_name>          switch current branch",
+                "  commit <message>              create commit from current HEAD",
+                "  log                           show commits in topological order",
+                "  log --sort-by=date|author     show sorted commits",
+                "  path <commit1> <commit2>      show shortest path",
+                "  ancestors <commit_hash>       show ancestor commits",
+                "  search <keyword>              search commits by message keyword",
+                "  search --author=<name>        search commits by author",
+                "  help                          show this help",
+                "  exit | quit                   leave the REPL",
+            ]
+        )
 
-    def _init(self, args: list[str]) -> list[str]:
+    def _init(self, args: list[str]) -> MiniGitResult:
         """저장소를 초기화한다."""
         if len(args) != 1 or not args[0].strip():
             raise AppError.invalid_command_usage("init <user_name>")
-        return self.repo.init(args[0])
+        return MiniGitResult(self.repo.init(args[0]))
 
-    def _whoiam(self, args: list[str]) -> list[str]:
+    def _whoiam(self, args: list[str]) -> MiniGitResult:
         """현재 커밋 작성자를 출력한다."""
         if args:
             raise AppError.invalid_command_usage("whoiam")
-        return self.repo.current_user()
+        return MiniGitResult(self.repo.current_user())
 
-    def _branch(self, args: list[str]) -> list[str]:
+    def _branch(self, args: list[str]) -> MiniGitResult:
         """브랜치 목록을 출력하거나 새 브랜치를 생성한다."""
         if not args:
-            return self.repo.list_branches()
+            return MiniGitResult(self.repo.list_branches())
         if len(args) != 1 or not args[0].strip():
             raise AppError.invalid_command_usage("branch [<branch_name>]")
-        return self.repo.create_branch(args[0])
+        return MiniGitResult(self.repo.create_branch(args[0]))
 
-    def _switch(self, args: list[str]) -> list[str]:
+    def _switch(self, args: list[str]) -> MiniGitResult:
         """현재 브랜치를 변경한다."""
         if len(args) != 1 or not args[0].strip():
             raise AppError.invalid_command_usage("switch <branch_name>")
-        return self.repo.switch(args[0])
+        return MiniGitResult(self.repo.switch(args[0]))
 
-    def _commit(self, args: list[str]) -> list[str]:
+    def _commit(self, args: list[str]) -> MiniGitResult:
         """커밋을 생성한다."""
         message = " ".join(args)
         if not message.strip():
             raise AppError.invalid_command_usage("commit <message>")
 
         commit = self.repo.commit(message)
-        return [f"[{commit.branch} {self._short_hash(commit.commit_hash)}] {commit.message}"]
+        return MiniGitResult(
+            [f"[{commit.branch} {self._short_hash(commit.commit_hash)}] {commit.message}"]
+        )
 
-    def _log(self, args: list[str]) -> list[str]:
+    def _log(self, args: list[str]) -> MiniGitResult:
         """커밋 로그를 출력 형식으로 변환한다."""
         sort_by = self._parse_log_sort_option(args)
         commits = self.repo.log(sort_by)
-        return self._format_commit_list(commits, include_branch=sort_by is None)
+        return MiniGitResult(
+            self._format_commit_list(commits, include_branch=sort_by is None)
+        )
 
-    def _path(self, args: list[str]) -> list[str]:
+    def _path(self, args: list[str]) -> MiniGitResult:
         """두 커밋 사이의 최단 경로를 출력한다."""
         if len(args) != 2 or not args[0].strip() or not args[1].strip():
             raise AppError.invalid_command_usage("path <commit1> <commit2>")
 
         path = self.repo.shortest_path(args[0], args[1])
         if path is None:
-            return ["No path"]
+            return MiniGitResult(["No path"])
 
-        return [f"Path: {self._format_path(path)}"]
+        return MiniGitResult([f"Path: {self._format_path(path)}"])
 
-    def _ancestors(self, args: list[str]) -> list[str]:
+    def _ancestors(self, args: list[str]) -> MiniGitResult:
         """특정 커밋의 모든 조상을 출력한다."""
         if len(args) != 1 or not args[0].strip():
             raise AppError.invalid_command_usage("ancestors <commit_hash>")
@@ -143,14 +153,14 @@ class MiniGit:
         ancestors = self.repo.ancestors(args[0])
 
         if not ancestors:
-            return ["No ancestors"]
+            return MiniGitResult(["No ancestors"])
 
         lines = ["Ancestors:"]
         for commit in ancestors:
             lines.append(f"- {self._short_hash(commit.commit_hash)}: {commit.message}")
-        return lines
+        return MiniGitResult(lines)
 
-    def _search(self, args: list[str]) -> list[str]:
+    def _search(self, args: list[str]) -> MiniGitResult:
         """키워드 또는 작성자 기준으로 커밋을 검색한다."""
         if len(args) != 1 or not args[0].strip():
             raise AppError.invalid_command_usage("search <keyword> | search --author=<name>")
@@ -168,12 +178,12 @@ class MiniGit:
             commits = self.repo.search_keyword(args[0])
 
         if not commits:
-            return ["Found 0 commits:"]
+            return MiniGitResult(["Found 0 commits:"])
 
         lines = [f"Found {len(commits)} commit:" if len(commits) == 1 else f"Found {len(commits)} commits:"]
         for commit in commits:
             lines.append(f"- {self._short_hash(commit.commit_hash)}: {commit.message}")
-        return lines
+        return MiniGitResult(lines)
 
     def _parse_log_sort_option(self, args: list[str]) -> str | None:
         """LOG 명령의 정렬 옵션을 해석한다."""

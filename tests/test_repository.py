@@ -384,10 +384,21 @@ class MiniGitCommandTest(unittest.TestCase):
     def test_minigit_exit_result_marks_repl_exit(self):
         app = MiniGit()
 
-        result = app.execute("exit")
+        exit_result = app.execute("exit")
+        quit_result = app.execute("quit")
 
-        self.assertEqual(result.lines, ["bye"])
-        self.assertTrue(result.should_exit)
+        self.assertEqual(exit_result.lines, ["bye"])
+        self.assertTrue(exit_result.should_exit)
+        self.assertEqual(quit_result.lines, ["bye"])
+        self.assertTrue(quit_result.should_exit)
+
+    def test_exit_and_quit_use_the_same_dispatch_handler(self):
+        app = MiniGit()
+
+        self.assertIs(
+            app._command_handlers["exit"],
+            app._command_handlers["quit"],
+        )
 
 
 class MiniGitReplTest(unittest.TestCase):
