@@ -12,13 +12,17 @@ class MiniGitRepository:
     """브랜치, HEAD, 커밋 그래프, 검색 인덱스를 함께 관리한다."""
 
     def __init__(self) -> None:
+        """커밋 DAG"""
         self.commits: dict[str, CommitObject] = {}
         self.children: dict[str, list[str]] = defaultdict(list)
+        """브랜치 관리"""
         self.branches: dict[str, str | None] = {}
         self.current_branch: str | None = None
         self.current_author: str | None = None
+        """검색 인덱스"""
         self.keyword_index: dict[str, list[str]] = defaultdict(list)
         self.author_index: dict[str, list[str]] = defaultdict(list)
+        """해시 중복 관리"""
         self._commit_counter = 0
         self._issued_hashes: set[str] = set()
 
@@ -65,8 +69,9 @@ class MiniGitRepository:
             raise AppError.branch_already_exists(branch_name)
 
         head_hash = self._head_hash()
-        if head_hash is None:
-            raise AppError.branch_requires_commit()
+        """주석 해제 시 첫 커밋 이전 브랜치 생성이 불가능해짐"""
+###        if head_hash is None:
+###            raise AppError.branch_requires_commit()
 
         self.branches[branch_name] = head_hash
         return [f"Created branch: {branch_name}"]
